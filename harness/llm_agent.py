@@ -81,7 +81,7 @@ class LLMAgent:
             model=self.model,
             messages=messages,
             temperature=0.2,
-            max_tokens=1024,
+            max_tokens=4096,
         )
         self._last_call = time.time()
 
