@@ -1,0 +1,7 @@
+{
+  "id": "log-5xx-summary",
+  "difficulty": "easy",
+  "max_steps": 15,
+  "command_timeout_sec": 30,
+  "test_timeout_sec": 60
+}

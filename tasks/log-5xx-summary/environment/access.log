@@ -1,0 +1,11 @@
+2026-09-01T10:00:01Z GET /api/orders 200 120ms
+2026-09-01T10:00:02Z POST /api/orders 503 340ms
+2026-09-01T10:00:03Z GET /api/orders?page=2 500 98ms
+2026-09-01T10:00:04Z GET /api/users 404 15ms
+2026-09-01T10:00:05Z GET /api/users 502 210ms
+2026-09-01T10:00:06Z this line is corrupted
+2026-09-01T10:00:07Z GET /api/payments 599 45ms
+2026-09-01T10:00:08Z GET /api/payments 600 45ms
+2026-09-01T10:00:09Z GET /health 200 2ms
+2026-09-01T10:00:10Z DELETE /api/orders/17 500 77ms
+2026-09-01T10:00:11Z GET /api/users?id=5 500 30ms
