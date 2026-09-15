@@ -37,6 +37,7 @@ def run_trial(task, agent, runs_dir: Path) -> dict:
         "task_id": task.id,
         "difficulty": task.difficulty,
         "agent": agent.name,
+        "agent_info": getattr(agent, "info", {}),
         "passed": passed,
         "error": error,
         "test_output": test_output,

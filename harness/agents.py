@@ -1,6 +1,12 @@
+from harness.llm_agent import LLMAgent
+
+
 class NopAgent:
     """Does nothing. A valid task must FAIL with this agent."""
     name = "nop"
+
+    def __init__(self):
+        self.info = {}
 
     def run(self, task, sandbox, steps: list):
         steps.append({"step": 1, "action": "nop", "note": "agent did nothing"})
@@ -9,6 +15,9 @@ class NopAgent:
 class OracleAgent:
     """Runs the reference solution. A valid task must PASS with this agent."""
     name = "oracle"
+
+    def __init__(self):
+        self.info = {}
 
     def run(self, task, sandbox, steps: list):
         solution_dir = task.path / "solution"
@@ -27,4 +36,5 @@ class OracleAgent:
 AGENTS = {
     "nop": NopAgent,
     "oracle": OracleAgent,
+    "llm": LLMAgent,
 }
