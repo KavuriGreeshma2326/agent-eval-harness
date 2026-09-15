@@ -1,11 +1,13 @@
 import json
 import os
+import shlex
 import time
 
 SYSTEM_PROMPT = """You are an autonomous agent working inside a Linux container (Debian, bash).
 There is NO internet access. Your working directory is /app.
 
-On every turn, reply with exactly ONE JSON object and nothing else.
+On every turn, reply with exactly ONE JSON object as plain text and nothing else.
+Do NOT use tool calls or function calls.
 
 To run a shell command:
 {"thought": "<short reasoning>", "command": "<bash command>"}
@@ -44,6 +46,49 @@ def parse_reply(text: str) -> dict:
     return data
 
 
+def salvage_tool_call(error):
+    """If the provider rejected a reply because the model emitted a tool call,
+    convert that tool call into our JSON action format. Returns a string or None."""
+    body = getattr(error, "body", None)
+    if isinstance(body, dict) and isinstance(body.get("error"), dict):
+        body = body["error"]
+    if not isinstance(body, dict) or body.get("code") != "tool_use_failed":
+        return None
+
+    raw = body.get("failed_generation")
+    if not raw:
+        return None
+
+    try:
+        generation = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+    args = generation.get("arguments", generation) if isinstance(generation, dict) else None
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except json.JSONDecodeError:
+            return raw
+    if not isinstance(args, dict):
+        return raw
+
+    if "command" in args or args.get("done") is True:
+        return json.dumps(args)
+
+    cmd = args.get("cmd")
+    if isinstance(cmd, list) and cmd and all(isinstance(c, str) for c in cmd):
+        if len(cmd) >= 3 and cmd[0] in ("bash", "sh") and cmd[1] in ("-lc", "-c"):
+            command = cmd[2]
+        else:
+            command = shlex.join(cmd)
+        return json.dumps({"thought": "(salvaged from tool call)", "command": command})
+    if isinstance(cmd, str) and cmd.strip():
+        return json.dumps({"thought": "(salvaged from tool call)", "command": cmd})
+
+    return raw
+
+
 class LLMAgent:
     name = "llm"
     MAX_CONSECUTIVE_PARSE_ERRORS = 3
@@ -70,21 +115,32 @@ class LLMAgent:
             "confidence": None,
             "prompt_tokens": 0,
             "completion_tokens": 0,
+            "salvaged_tool_calls": 0,
         }
 
     def _chat(self, messages: list) -> str:
+        from openai import BadRequestError
+
         wait = self.min_interval - (time.time() - self._last_call)
         if wait > 0:
             time.sleep(wait)
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=0.2,
-            max_tokens=4096,
-        )
-        self._last_call = time.time()
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.2,
+                max_tokens=4096,
+            )
+        except BadRequestError as e:
+            self._last_call = time.time()
+            salvaged = salvage_tool_call(e)
+            if salvaged is None:
+                raise
+            self.info["salvaged_tool_calls"] += 1
+            return salvaged
 
+        self._last_call = time.time()
         if response.usage:
             self.info["prompt_tokens"] += response.usage.prompt_tokens or 0
             self.info["completion_tokens"] += response.usage.completion_tokens or 0
@@ -112,7 +168,7 @@ class LLMAgent:
                     return
                 messages.append({
                     "role": "user",
-                    "content": f"Invalid reply: {e}. Reply with exactly one JSON object as instructed.",
+                    "content": f"Invalid reply: {e}. Reply with exactly one JSON object as plain text.",
                 })
                 continue
 
