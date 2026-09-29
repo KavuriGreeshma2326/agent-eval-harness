@@ -4,6 +4,10 @@ import uuid
 MAX_OUTPUT_CHARS = 4000
 
 
+class SandboxError(RuntimeError):
+    """Docker build/start/copy failed. This is an infrastructure problem, not an agent failure."""
+
+
 class Sandbox:
     def __init__(self, task):
         self.task = task
@@ -16,7 +20,7 @@ class Sandbox:
             capture_output=True, text=True,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"Docker build failed:\n{result.stderr[-2000:]}")
+            raise SandboxError(f"Docker build failed:\n{result.stderr[-2000:]}")
 
     def start(self):
         name = f"aeh-{self.task.id}-{uuid.uuid4().hex[:8]}"
@@ -32,7 +36,7 @@ class Sandbox:
             capture_output=True, text=True,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"Container start failed:\n{result.stderr}")
+            raise SandboxError(f"Container start failed:\n{result.stderr}")
         self.container = name
 
     def exec(self, command: str, timeout_sec: int) -> dict:
@@ -57,7 +61,7 @@ class Sandbox:
             capture_output=True, text=True,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"docker cp failed:\n{result.stderr}")
+            raise SandboxError(f"docker cp failed:\n{result.stderr}")
 
     def stop(self):
         if self.container:

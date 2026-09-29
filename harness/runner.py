@@ -4,7 +4,21 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from harness.sandbox import Sandbox
+from harness.sandbox import Sandbox, SandboxError
+
+
+def classify_error(exc: Exception) -> str:
+    """Say where an exception came from. None of these are the agent's fault:
+    the agent's own shell commands never raise (failures come back as exit codes)."""
+    if isinstance(exc, SandboxError):
+        return "docker"
+    try:
+        import openai
+        if isinstance(exc, openai.OpenAIError):
+            return "llm_api"
+    except ImportError:
+        pass
+    return "harness"
 
 
 def run_trial(task, agent, runs_dir: Path) -> dict:
@@ -17,6 +31,7 @@ def run_trial(task, agent, runs_dir: Path) -> dict:
     passed = False
     test_output = ""
     error = None
+    error_type = None
     started = time.time()
 
     try:
@@ -29,8 +44,16 @@ def run_trial(task, agent, runs_dir: Path) -> dict:
         test_output = test["output"]
     except Exception as e:
         error = f"{type(e).__name__}: {e}"
+        error_type = classify_error(e)
     finally:
         sandbox.stop()
+
+    if error is not None:
+        outcome = "infra_error"
+    elif passed:
+        outcome = "passed"
+    else:
+        outcome = "failed"
 
     record = {
         "trial_id": trial_id,
@@ -38,8 +61,10 @@ def run_trial(task, agent, runs_dir: Path) -> dict:
         "difficulty": task.difficulty,
         "agent": agent.name,
         "agent_info": getattr(agent, "info", {}),
+        "outcome": outcome,
         "passed": passed,
         "error": error,
+        "error_type": error_type,
         "test_output": test_output,
         "num_steps": len(steps),
         "duration_sec": round(time.time() - started, 2),
