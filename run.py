@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -20,8 +21,45 @@ def pass_rate_str(passed: int, failed: int) -> str:
     return f"{passed}/{scored}" if scored else "-"
 
 
+def validate_main(argv):
+    """Check every task is well-formed: the reference solution (oracle) must pass
+    and a do-nothing agent (nop) must fail. Validation runs are saved in runs/validate/
+    so they don't mix with real results in report.py."""
+    parser = argparse.ArgumentParser(prog="run.py validate",
+                                     description="Validate tasks with the oracle and nop agents")
+    parser.add_argument("--task", nargs="+", help="One or more task folders")
+    parser.add_argument("--all", action="store_true", help="Validate every task in tasks/")
+    args = parser.parse_args(argv)
+    if not args.task and not args.all:
+        parser.error("give --task <folder> or --all")
+
+    task_dirs = discover_tasks() if args.all else [Path(t) for t in args.task]
+    tasks = [load_task(str(d)) for d in task_dirs]
+    runs_dir = Path("runs") / "validate"
+    labels = {"passed": "PASS", "failed": "FAIL", "infra_error": "INFRA_ERROR"}
+
+    print(f"{'TASK':30} {'ORACLE':>12} {'NOP':>12} {'VALID':>6}")
+    all_valid = True
+    for task in tasks:
+        oracle = run_trial(task, AGENTS["oracle"](), runs_dir)
+        nop = run_trial(task, AGENTS["nop"](), runs_dir)
+        valid = oracle["outcome"] == "passed" and nop["outcome"] == "failed"
+        all_valid = all_valid and valid
+        print(f"{task.id:30} {labels[oracle['outcome']]:>12} {labels[nop['outcome']]:>12} "
+              f"{'yes' if valid else 'NO':>6}")
+        for name, rec in (("oracle", oracle), ("nop", nop)):
+            if rec["error"]:
+                print(f"    {name} error ({rec['error_type']}): {rec['error']}")
+
+    print("\nAll tasks valid." if all_valid else "\nSome tasks are INVALID (see above).")
+    return 0 if all_valid else 1
+
+
 def main():
     load_dotenv()
+
+    if len(sys.argv) > 1 and sys.argv[1] == "validate":
+        sys.exit(validate_main(sys.argv[2:]))
 
     parser = argparse.ArgumentParser(description="Agent Evaluation Harness")
     parser.add_argument("--task", nargs="+", help="One or more task folders")
