@@ -1,0 +1,7 @@
+{
+  "id": "flaky-test-fix",
+  "difficulty": "hard",
+  "max_steps": 25,
+  "command_timeout_sec": 60,
+  "test_timeout_sec": 300
+}

@@ -1,0 +1,10 @@
+# m  h     dom mon dow  command
+MAILTO=ops@example.com
+SHELL=/bin/bash
+
+30 9    1   *   1    backup-db
+0  */6  *   *   *    rotate-logs
+15 2    *   *   7    weekly-report
+0  0    13  *   5    audit
+45 8-17/4 * *   1-5  poll-queue
+0  12   29  2   *    leap-report

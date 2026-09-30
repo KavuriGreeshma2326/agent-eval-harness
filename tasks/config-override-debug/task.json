@@ -1,0 +1,7 @@
+{
+  "id": "config-override-debug",
+  "difficulty": "medium",
+  "max_steps": 20,
+  "command_timeout_sec": 30,
+  "test_timeout_sec": 60
+}

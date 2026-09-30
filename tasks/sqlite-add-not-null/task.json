@@ -1,0 +1,7 @@
+{
+  "id": "sqlite-add-not-null",
+  "difficulty": "hard",
+  "max_steps": 25,
+  "command_timeout_sec": 30,
+  "test_timeout_sec": 60
+}

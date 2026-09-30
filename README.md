@@ -56,6 +56,14 @@ python report.py                                              # summarize all sa
 
 Each trial ends with one outcome: `passed`, `failed`, or `infra_error`.
 
+## Tasks
+
+There are 11 tasks: 3 easy, 5 medium and 3 hard, covering log and data processing,
+config debugging, fixing broken code, multi-file reasoning, date logic, a database
+migration and flaky-test debugging. Each is designed so that a careless agent can be
+confident and still wrong. See [docs/tasks.md](docs/tasks.md) for what each task tests
+and how its tests catch common wrong answers.
+
 ## Design choices
 
 - **No network in the sandbox.** The agent has to solve the task with what is in the
@@ -75,6 +83,7 @@ Each trial ends with one outcome: `passed`, `failed`, or `infra_error`.
 
 Implemented:
 - Task format, Docker sandbox, oracle and nop agents
+- 11 validated tasks across three difficulty levels
 - LLM agent loop with JSON actions, stated confidence and token tracking
 - Multi-task, multi-trial runs with a model override
 - Separation of infra errors from agent failures
@@ -82,7 +91,6 @@ Implemented:
 - Results report (pass rate, steps, tokens, average confidence, infra errors)
 
 Planned:
-- More tasks across difficulty levels
 - pass@k
 - Calibration analysis (Brier score, ECE)
 - Failure taxonomy (automatic and manual labels)
@@ -91,3 +99,5 @@ Planned:
 ## Acknowledgements
 
 The task format is inspired by [Terminal-Bench](https://github.com/laude-institute/terminal-bench).
+Tasks other than log-5xx-summary were drafted with AI assistance (Claude) and validated
+with oracle and nop runs.

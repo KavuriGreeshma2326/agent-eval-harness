@@ -1,0 +1,10 @@
+[
+  {"sku": "BK-101", "price": 12.99, "currency": "USD"},
+  {"sku": "BK-102", "price": 45.5, "currency": "EUR"},
+  {"sku": "EL-201", "price": 199.0, "currency": "GBP"},
+  {"sku": "EL-202", "price": 3980, "currency": "JPY"},
+  {"sku": "HM-301", "price": 749.0, "currency": "INR"},
+  {"sku": "HM-302", "price": 8.75, "currency": "USD"},
+  {"sku": "TY-401", "price": 1250, "currency": "JPY"},
+  {"sku": "TY-402", "price": 23.4, "currency": "EUR"}
+]
