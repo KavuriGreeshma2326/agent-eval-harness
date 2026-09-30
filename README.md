@@ -43,7 +43,14 @@ python run.py validate --all                                  # check every task
 python run.py --all --agent llm --trials 5                    # run the LLM agent
 python run.py --all --agent llm --trials 5 --model <model>    # override the model from .env
 python report.py                                              # summarize all saved runs
+python report.py --markdown                                   # also write results/REPORT.md
+python -m unittest                                            # unit tests for the analysis code
 ```
+
+To label failures by hand, create `labels.json` in the repo root mapping trial IDs (the
+`trial_id` field in each file in `runs/`) to a short label, for example
+`{"20261021T101500Z-env-merge-llm-a1b2c3": "stripped # inside a quoted value"}`.
+The report counts these per model alongside the automatic labels.
 
 ## How a trial works
 
@@ -64,6 +71,17 @@ migration and flaky-test debugging. Each is designed so that a careless agent ca
 confident and still wrong. See [docs/tasks.md](docs/tasks.md) for what each task tests
 and how its tests catch common wrong answers.
 
+## Analysis
+
+- **pass@k** uses the unbiased estimator from Chen et al. (2021):
+  `1 - C(n-c, k) / C(n, k)` for n scored trials with c passes.
+- **Calibration.** When the LLM agent declares a task done, it states its confidence that
+  the hidden tests will pass. The report compares that confidence with actual outcomes
+  using the Brier score and expected calibration error (5 equal-width bins).
+- **Failure taxonomy.** Every failed trial gets an automatic label: `overconfident_done`
+  (declared done, but the tests failed), `max_steps` or `parse_errors`. Manual labels in
+  `labels.json` add the specific reason.
+
 ## Design choices
 
 - **No network in the sandbox.** The agent has to solve the task with what is in the
@@ -77,7 +95,9 @@ and how its tests catch common wrong answers.
   shell commands never raise exceptions (failures come back as exit codes), so any
   exception during a trial is an infrastructure problem.
 - **Confidence is recorded at the moment the agent declares done.** Trials that stop for
-  other reasons (step limit, repeated invalid replies) have no confidence value.
+  other reasons (step limit, repeated invalid replies) have no confidence value. The report
+  shows how many trials were left out of the calibration numbers for this reason, because
+  excluding them makes an agent look better calibrated than it is.
 
 ## Status
 
@@ -89,11 +109,12 @@ Implemented:
 - Separation of infra errors from agent failures
 - `validate` command
 - Results report (pass rate, steps, tokens, average confidence, infra errors)
+- pass@k with the unbiased estimator
+- Calibration analysis: Brier score and ECE, with per-bin breakdown
+- Failure taxonomy: automatic labels from how the agent stopped, plus manual labels
+- Markdown report export and unit tests for the analysis code
 
 Planned:
-- pass@k
-- Calibration analysis (Brier score, ECE)
-- Failure taxonomy (automatic and manual labels)
 - Multi-model results
 
 ## Acknowledgements
