@@ -1,0 +1,5 @@
+# Keep Linux line endings everywhere. Task scripts run inside Linux containers, and some
+# tests check file hashes, so Windows line endings (CRLF) would break them.
+* text=auto eol=lf
+*.db binary
+*.gz binary
