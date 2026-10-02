@@ -94,6 +94,11 @@ and how its tests catch common wrong answers.
   is recorded as `infra_error` and does not count as an agent failure. The agent's own
   shell commands never raise exceptions (failures come back as exit codes), so any
   exception during a trial is an infrastructure problem.
+- **Provider quirks are handled, and counted.** GPT-OSS models sometimes answer with a
+  tool call instead of plain JSON, or the provider puts the whole answer in the reasoning
+  field and leaves the reply empty. The agent recovers the intended action in both cases
+  and records how often it happened (AVG SALV and AVG RECOV in the report), so these
+  format problems are not counted as the model failing the task, and are still visible.
 - **Confidence is recorded at the moment the agent declares done.** Trials that stop for
   other reasons (step limit, repeated invalid replies) have no confidence value. The report
   shows how many trials were left out of the calibration numbers for this reason, because

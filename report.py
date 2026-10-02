@@ -38,18 +38,21 @@ def summary_section(records, markdown):
             tokens = sum(i.get("prompt_tokens", 0) + i.get("completion_tokens", 0) for i in infos) / k
             confs = [i["confidence"] for i in infos if i.get("confidence") is not None]
             salvaged = sum(i.get("salvaged_tool_calls", 0) for i in infos)
+            recovered = sum(i.get("recovered_from_reasoning", 0) for i in infos)
             any_salvaged = any_salvaged or salvaged > 0
             rows.append([task_id, agent, model, len(rs), f"{passes / k:.0%}",
                          f"{sum(r['num_steps'] for r in ok) / k:.1f}",
                          f"{tokens:.0f}" + ("*" if salvaged else ""),
                          fmt(sum(confs) / len(confs) if confs else None, ".2f"),
-                         f"{salvaged / k:.1f}", infra])
+                         f"{salvaged / k:.1f}", f"{recovered / k:.1f}", infra])
         else:
-            rows.append([task_id, agent, model, len(rs), "-", "-", "-", "-", "-", infra])
+            rows.append([task_id, agent, model, len(rs), "-", "-", "-", "-", "-", "-", infra])
 
     headers = ["TASK", "AGENT", "MODEL", "TRIALS", "PASS", "AVG STEPS", "AVG TOKENS",
-               "AVG CONF", "AVG SALV", "INFRA"]
-    notes = ["PASS and averages exclude infra-error trials (LLM API or Docker failures)."]
+               "AVG CONF", "AVG SALV", "AVG RECOV", "INFRA"]
+    notes = ["PASS and averages exclude infra-error trials (LLM API or Docker failures).",
+             "AVG SALV: replies rescued from tool calls. AVG RECOV: replies recovered from the "
+             "reasoning field because the reply itself was empty (both per trial)."]
     if any_salvaged:
         notes.append("* Token count is a lower bound: salvaged tool-call turns return no usage data.")
     return "Summary by task", table(headers, rows, markdown), notes

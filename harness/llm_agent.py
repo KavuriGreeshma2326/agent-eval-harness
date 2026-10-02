@@ -46,6 +46,66 @@ def parse_reply(text: str) -> dict:
     return data
 
 
+def extract_last_action(text):
+    """Return the last JSON object in text that is a valid action (has "command" or
+    done=true), as a JSON string, or None. Used when a provider puts the model's whole
+    answer in the reasoning field and leaves the reply empty."""
+    decoder = json.JSONDecoder()
+    pos = text.rfind("{")
+    while pos != -1:
+        try:
+            obj, _ = decoder.raw_decode(text, pos)
+        except json.JSONDecodeError:
+            obj = None
+        if isinstance(obj, dict) and ("command" in obj or obj.get("done") is True):
+            return json.dumps(obj)
+        pos = text.rfind("{", 0, pos)
+    return None
+
+
+def tool_call_to_action(arguments, name=None):
+    """Convert a tool call (its name and raw arguments) into our JSON action format.
+    GPT-OSS models often answer with tool calls even when told not to. Returns a JSON
+    string for parse_reply, or the raw arguments if they can't be interpreted."""
+    raw = arguments if isinstance(arguments, str) else json.dumps(arguments)
+    args = arguments
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except json.JSONDecodeError:
+            # A native "python" tool call carries plain code, not JSON.
+            if name and "python" in name.lower() and args.strip():
+                command = "python3 - <<'PYEOF'\n" + args.strip() + "\nPYEOF"
+                return json.dumps({"thought": "(salvaged from python tool call)", "command": command})
+            return raw
+    if isinstance(args, dict) and "arguments" in args and "command" not in args and "cmd" not in args:
+        return tool_call_to_action(args["arguments"], args.get("name", name))
+    if not isinstance(args, dict):
+        return raw
+
+    if "command" in args or args.get("done") is True:
+        if isinstance(args.get("command"), list):
+            args = dict(args, command=_join_cmd(args["command"]))
+        return json.dumps(args)
+
+    cmd = args.get("cmd")
+    if isinstance(cmd, list) and cmd and all(isinstance(c, str) for c in cmd):
+        return json.dumps({"thought": "(salvaged from tool call)", "command": _join_cmd(cmd)})
+    if isinstance(cmd, str) and cmd.strip():
+        return json.dumps({"thought": "(salvaged from tool call)", "command": cmd})
+    if isinstance(args.get("code"), str) and args["code"].strip():
+        command = "python3 - <<'PYEOF'\n" + args["code"].strip() + "\nPYEOF"
+        return json.dumps({"thought": "(salvaged from python tool call)", "command": command})
+
+    return raw
+
+
+def _join_cmd(cmd):
+    if len(cmd) >= 3 and cmd[0] in ("bash", "sh") and cmd[1] in ("-lc", "-c"):
+        return cmd[2]
+    return shlex.join(cmd)
+
+
 def salvage_tool_call(error):
     """If the provider rejected a reply because the model emitted a tool call,
     convert that tool call into our JSON action format. Returns a string or None."""
@@ -58,35 +118,7 @@ def salvage_tool_call(error):
     raw = body.get("failed_generation")
     if not raw:
         return None
-
-    try:
-        generation = json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
-
-    args = generation.get("arguments", generation) if isinstance(generation, dict) else None
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except json.JSONDecodeError:
-            return raw
-    if not isinstance(args, dict):
-        return raw
-
-    if "command" in args or args.get("done") is True:
-        return json.dumps(args)
-
-    cmd = args.get("cmd")
-    if isinstance(cmd, list) and cmd and all(isinstance(c, str) for c in cmd):
-        if len(cmd) >= 3 and cmd[0] in ("bash", "sh") and cmd[1] in ("-lc", "-c"):
-            command = cmd[2]
-        else:
-            command = shlex.join(cmd)
-        return json.dumps({"thought": "(salvaged from tool call)", "command": command})
-    if isinstance(cmd, str) and cmd.strip():
-        return json.dumps({"thought": "(salvaged from tool call)", "command": cmd})
-
-    return raw
+    return tool_call_to_action(raw)
 
 
 class LLMAgent:
@@ -116,7 +148,9 @@ class LLMAgent:
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "salvaged_tool_calls": 0,
+            "recovered_from_reasoning": 0,
         }
+        self.last_meta = {}
 
     def _chat(self, messages: list) -> str:
         from openai import BadRequestError
@@ -144,7 +178,34 @@ class LLMAgent:
         if response.usage:
             self.info["prompt_tokens"] += response.usage.prompt_tokens or 0
             self.info["completion_tokens"] += response.usage.completion_tokens or 0
-        return response.choices[0].message.content or ""
+
+        choice = response.choices[0]
+        message = choice.message
+        content = message.content or ""
+        tool_calls = getattr(message, "tool_calls", None) or []
+        reasoning = getattr(message, "reasoning", None) or ""
+        self.last_meta = {
+            "finish_reason": choice.finish_reason,
+            "tool_calls": [{"name": tc.function.name, "arguments": tc.function.arguments}
+                           for tc in tool_calls if getattr(tc, "function", None)],
+            "reasoning_excerpt": reasoning[:500],
+        }
+
+        if not content.strip() and self.last_meta["tool_calls"]:
+            # The provider accepted a tool call instead of plain text. Use the first one.
+            first = self.last_meta["tool_calls"][0]
+            self.info["salvaged_tool_calls"] += 1
+            return tool_call_to_action(first["arguments"], first["name"])
+
+        if not content.strip() and reasoning:
+            # Some providers put the model's final answer in the reasoning field and leave
+            # the reply empty. Recover the last action written there, and count it.
+            recovered = extract_last_action(reasoning)
+            if recovered is not None:
+                self.info["recovered_from_reasoning"] += 1
+                self.last_meta["recovered_from_reasoning"] = True
+                return recovered
+        return content
 
     def run(self, task, sandbox, steps: list):
         system = SYSTEM_PROMPT.replace("__TIMEOUT__", str(task.command_timeout_sec))
@@ -155,6 +216,7 @@ class LLMAgent:
         parse_errors = 0
 
         for step_num in range(1, task.max_steps + 1):
+            self.last_meta = {}
             reply = self._chat(messages)
             messages.append({"role": "assistant", "content": reply})
 
@@ -162,7 +224,8 @@ class LLMAgent:
                 action = parse_reply(reply)
             except ValueError as e:
                 parse_errors += 1
-                steps.append({"step": step_num, "parse_error": str(e), "raw_reply": reply[:1000]})
+                steps.append({"step": step_num, "parse_error": str(e), "raw_reply": reply[:1000],
+                              "response_meta": self.last_meta})
                 if parse_errors >= self.MAX_CONSECUTIVE_PARSE_ERRORS:
                     self.info["stop_reason"] = "parse_errors"
                     return
